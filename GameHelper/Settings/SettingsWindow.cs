@@ -474,6 +474,19 @@ namespace GameHelper.Settings
         {
             if (ImGui.CollapsingHeader("Input Config"))
             {
+                ImGui.Checkbox("Enable Controller Support", ref Core.GHSettings.EnableControllerMode);
+                ImGuiHelper.ToolTip(
+                    "Check this box to enable the global controller support service.\n\n" +
+                    "This allows GameHelper to create a virtual controller and mirror input from a physical controller, " +
+                    "enabling controller-based actions in all plugins.\n\n" +
+                    "IMPORTANT: This feature requires external drivers to be installed first:\n" +
+                    "1. ViGEmBus Driver: To create the virtual controller.\n" +
+                    "2. HidHide Driver: To hide the physical controller from the game.\n\n" +
+                    "ACTION REQUIRED: After checking or unchecking this box, " +
+                    "you must restart GameHelper for the change to take full effect."
+                );
+                ImGui.Separator();
+
                 ImGui.DragInt("Key Timeout", ref Core.GHSettings.KeyPressTimeout, 0.2f, 60, 300);
                 ImGuiHelper.ToolTip("When GameOverlay press a key in the game, the key " +
                     "has to go to the GGG server for it to work. This process takes " +

@@ -15,6 +15,10 @@ namespace GameHelper
     using RemoteObjects;
     using Settings;
     using Utils;
+    using System.Threading;
+    using System.Threading.Tasks;
+    using GameHelper.Controller;
+    using SharpDX.DirectInput;
 
     /// <summary>
     ///     Main Class that depends on the GameProcess Events
@@ -27,6 +31,17 @@ namespace GameHelper
         ///     Gets the GameHelper version.
         /// </summary>
         private static string version;
+
+        /// <summary>
+        ///     Gets the Virtual Controller Manager instance.
+        ///     This is null if the controller mode is disabled in settings.
+        /// </summary>
+        public static VirtualControllerManager VController { get; private set; }
+
+        /// <summary>
+        ///     Token to cancel the controller mirroring background task.
+        /// </summary>
+        private static CancellationTokenSource controllerMirrorToken;
 
         /// <summary>
         ///     Gets the GameHelper Overlay.
@@ -119,6 +134,22 @@ namespace GameHelper
                 Console.WriteLine($"Failed to read GameHelper version: {ex.Message}.");
                 version = "Dev";
             }
+
+            // Initialize the controller service if it's enabled in the global settings.
+            // Assumes a setting like 'EnableControllerMode' exists in the 'State' (GHSettings) class.
+            if (GHSettings.EnableControllerMode)
+            {
+                try
+                {
+                    VController = new VirtualControllerManager();
+                    StartControllerMirroring();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to initialize Virtual Controller: {ex.Message}");
+                    VController = null;
+                }
+            }
         }
 
         /// <summary>
@@ -149,6 +180,10 @@ namespace GameHelper
         /// </summary>
         internal static void Dispose()
         {
+            // Stop the controller mirroring task and dispose of the controller manager.
+            controllerMirrorToken?.Cancel();
+            VController?.Dispose();
+
             Process.Close(false);
         }
 
@@ -181,6 +216,72 @@ namespace GameHelper
             {
                 GgpkObjectCache.ToImGui();
             }
+        }
+
+        /// <summary>
+        ///     Starts the background task for mirroring the physical controller to the virtual one.
+        /// </summary>
+        private static void StartControllerMirroring()
+        {
+            controllerMirrorToken = new CancellationTokenSource();
+            Task.Run(async () =>
+            {
+                var directInput = new DirectInput();
+                var joystickGuid = Guid.Empty;
+                foreach (var deviceInstance in directInput.GetDevices(DeviceType.Gamepad, DeviceEnumerationFlags.AllDevices))
+                {
+                    joystickGuid = deviceInstance.InstanceGuid;
+                    break;
+                }
+
+                if (joystickGuid == Guid.Empty)
+                {
+                    foreach (var deviceInstance in directInput.GetDevices(DeviceType.Joystick, DeviceEnumerationFlags.AllDevices))
+                    {
+                        joystickGuid = deviceInstance.InstanceGuid;
+                        break;
+                    }
+                }
+                if (joystickGuid == Guid.Empty)
+                {
+                    Console.WriteLine("VCM WARNING: No physical (DirectInput) controller was found.");
+                    return;
+                }
+
+                using var joystick = new Joystick(directInput, joystickGuid);
+                Console.WriteLine($"VCM INFO: Physical controller found: {joystick.Information.InstanceName}. Mirroring...");
+                joystick.Properties.BufferSize = 128;
+                joystick.Acquire();
+                while (!controllerMirrorToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        joystick.Poll();
+                        var state = joystick.GetCurrentState();
+                        VController?.Update(state);
+                    }
+                    catch (SharpDX.SharpDXException ex)
+                    {
+                        if (ex.ResultCode == SharpDX.DirectInput.ResultCode.InputLost || ex.ResultCode == SharpDX.DirectInput.ResultCode.NotAcquired)
+                        {
+                            try { joystick.Acquire(); } catch { await Task.Delay(1000); }
+                        }
+                        else
+                        {
+                            Console.WriteLine($"VCM ERROR: Unrecoverable mirroring error: {ex.Message}.");
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"VCM ERROR: General mirroring error: {ex.Message}.");
+                        break;
+                    }
+
+                    await Task.Delay(16);
+                }
+                joystick.Unacquire();
+            }, controllerMirrorToken.Token);
         }
 
         /// <summary>
