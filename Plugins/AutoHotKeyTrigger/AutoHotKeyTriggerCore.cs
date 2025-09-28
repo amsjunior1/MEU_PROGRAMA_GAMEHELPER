@@ -7,6 +7,7 @@ namespace AutoHotKeyTrigger
     using System;
     using System.Collections.Generic;
     using System.IO;
+    using System.Linq;
     using System.Numerics;
     using ClickableTransparentOverlay.Win32;
     using Coroutine;
@@ -50,16 +51,16 @@ namespace AutoHotKeyTrigger
         public override void DrawSettings()
         {
             ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X);
-            ImGui.TextColored(this.impTextColor, "Do not trust Settings.txt files for Auto Hokey Trigger from sources you have not personally verified. " + 
-                              "They may contain malicious content that can compromise your computer. " +
-                              "Using profiles with incorrectly configured rules may also lead to you being kicked from the server, " +
-                              "or your account being banned as a result of preforming to many actions repeatedly.") ;
+            ImGui.TextColored(this.impTextColor, "Do not trust Settings.txt files for Auto Hokey Trigger from sources you have not personally verified. " +
+                                "They may contain malicious content that can compromise your computer. " +
+                                "Using profiles with incorrectly configured rules may also lead to you being kicked from the server, " +
+                                "or your account being banned as a result of preforming to many actions repeatedly.");
             ImGui.NewLine();
             ImGui.TextColored(this.impTextColor, "Again, all profiles/rules created to use a specified flask(s) should have at a minimum " +
-                              "the FLASK_EFFECT and an appropriate number of FLASK_CHARGES defined as part of the use condition of a given profile rule. " +
-                              "Failing to to include these two conditions as part of a rule will likely result in Auto Hotkey Trigger spamming the flask(s), " + 
-                              "resulting in a possible kick or ban from the game servers because of sending to many actions to the server. " +
-                              "You have been warrned, use common sense when creating profiles/rulse with this tool.");
+                                "the FLASK_EFFECT and an appropriate number of FLASK_CHARGES defined as part of the use condition of a given profile rule. " +
+                                "Failing to to include these two conditions as part of a rule will likely result in Auto Hotkey Trigger spamming the flask(s), " +
+                                "resulting in a possible kick or ban from the game servers because of sending to many actions to the server. " +
+                                "You have been warrned, use common sense when creating profiles/rulse with this tool.");
             ImGui.PopTextWrapPos();
             if (ImGui.CollapsingHeader("Common Config"))
             {
@@ -67,13 +68,13 @@ namespace AutoHotKeyTrigger
                 ImGui.SameLine();
                 ImGui.Checkbox("Trigger rules or execute Autoquit in Hideout", ref this.Settings.ShouldRunInHideout);
                 ImGuiHelper.ToolTip("The debug mode may prove to be a helpful tool in troubleshooting Auto HotKey Trigger profile rules that are not preforming as expected. " +
-                                    "It can also be used to verify if AutoHotKeyTrigger is spamming the profile rule action or not based on the included conditions of a given profile rule. " +
-                                    "It is highly suggested to create and test all new profiles/rules with the debug mode turned on to insure that all rules are preforming as expected.");
+                                        "It can also be used to verify if AutoHotKeyTrigger is spamming the profile rule action or not based on the included conditions of a given profile rule. " +
+                                        "It is highly suggested to create and test all new profiles/rules with the debug mode turned on to insure that all rules are preforming as expected.");
                 ImGuiHelper.NonContinuousEnumComboBox("Dump Player Status Effects",
                     ref this.Settings.DumpStatusEffectOnMe);
                 ImGuiHelper.ToolTip($"This hotkey will dump the current active player's buff(s), debuff(s) into a text file in the GameHelper -> Plugins -> " +
-                                    $"AutoHotKeyTrigger folder. Use this hotkey if the AutoHotKeyTrigger plugin fails to detect for example: " +
-                                    $"bleeds, corrupting blood, poison, freeze, ignites or other de(buffs) currently active on the character.");
+                                        $"AutoHotKeyTrigger folder. Use this hotkey if the AutoHotKeyTrigger plugin fails to detect for example: " +
+                                        $"bleeds, corrupting blood, poison, freeze, ignites or other de(buffs) currently active on the character.");
                 ImGuiHelper.IEnumerableComboBox("Profile", this.Settings.Profiles.Keys, ref this.Settings.CurrentProfile);
                 if (ImGui.Button("Add/Reset and Activate League Start Default Profile"))
                 {
@@ -95,9 +96,6 @@ namespace AutoHotKeyTrigger
                 }
             }
 
-            // separate update to allow settings to draw correctly,
-            // does not really hurt performance and only called
-            // when the settings window is open
             DynamicCondition.UpdateState();
             if (ImGui.CollapsingHeader("Existing Profiles"))
             {
@@ -218,14 +216,6 @@ namespace AutoHotKeyTrigger
                 }
             }
 
-            if (Core.GHSettings.EnableControllerMode)
-            {
-                // this is actually disabled in <see cref="MiscHelper.KeyUp"/> function.
-                // follow is done just to provide debug msg to end users.
-                this.debugMessage = "Controller mode enabled. this plugin doesn't support controllers";
-                return;
-            }
-
             if (string.IsNullOrEmpty(this.Settings.CurrentProfile))
             {
                 this.debugMessage = "No Profile Selected.";
@@ -244,9 +234,10 @@ namespace AutoHotKeyTrigger
                 return;
             }
 
+            // MODIFIED: The rule execution loop now passes the global controller service from Core.
             foreach (var rule in this.Settings.Profiles[this.Settings.CurrentProfile].Rules)
             {
-                rule.Execute(this.DebugLog);
+                rule.Execute(this.DebugLog, Core.VController);
             }
         }
 
@@ -266,6 +257,8 @@ namespace AutoHotKeyTrigger
             this.onAreaChange?.Cancel();
             this.onAreaChange = null;
         }
+
+
 
         /// <inheritdoc />
         public override void OnEnable(bool isGameOpened)
@@ -287,6 +280,19 @@ namespace AutoHotKeyTrigger
             else
             {
                 this.CreateDefaultProfile();
+            }
+
+            // MODIFIED: This loop re-hydrates the controller button object from the saved button name.
+            // This ensures controller settings are correctly loaded after a restart.
+            foreach (var profile in this.Settings.Profiles.Values)
+            {
+                foreach (var rule in profile.Rules)
+                {
+                    if (!string.IsNullOrEmpty(rule.ControllerButtonName))
+                    {
+                        rule.ControllerButton = ControllerButtonHelper.AllButtons.FirstOrDefault(b => b.Name == rule.ControllerButtonName);
+                    }
+                }
             }
 
             this.onAreaChange = CoroutineHandler.Start(this.EnableAutoQuitWarningUiOnAreaChange());

@@ -44,7 +44,7 @@ namespace AutoHotKeyTrigger
         }
 
         /// <summary>
-        ///    Gets a value indicating whether to enable or disable the auto-quit feature.
+        ///     Gets a value indicating whether to enable or disable the auto-quit feature.
         /// </summary>
         public bool EnableAutoQuit;
 

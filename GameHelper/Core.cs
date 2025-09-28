@@ -27,92 +27,38 @@ namespace GameHelper
     /// </summary>
     public static class Core
     {
-        /// <summary>
-        ///     Gets the GameHelper version.
-        /// </summary>
         private static string version;
-
+        
+        /// <summary>
+        ///     Gets the current status of the Controller Service for display on the UI.
+        /// </summary>
+        public static string ControllerStatus { get; internal set; } = "Disabled";
+        
         /// <summary>
         ///     Gets the Virtual Controller Manager instance.
         ///     This is null if the controller mode is disabled in settings.
         /// </summary>
         public static VirtualControllerManager VController { get; private set; }
-
+        
         /// <summary>
         ///     Token to cancel the controller mirroring background task.
         /// </summary>
         private static CancellationTokenSource controllerMirrorToken;
-
-        /// <summary>
-        ///     Gets the GameHelper Overlay.
-        /// </summary>
+        
         public static GameOverlay Overlay { get; internal set; } = null;
-
-        /// <summary>
-        ///     Gets the list of active coroutines.
-        /// </summary>
         public static List<ActiveCoroutine> CoroutinesRegistrar { get; } = new();
-
-        /// <summary>
-        ///     Gets the GameStates instance. For details read class description.
-        /// </summary>
         public static GameStates States { get; } = new(IntPtr.Zero);
-
-        /// <summary>
-        ///     Gets the files loaded for the current area.
-        /// </summary>
         public static LoadedFiles CurrentAreaLoadedFiles { get; } = new(IntPtr.Zero);
-
-        /// <summary>
-        ///     Gets the GameProcess instance. For details read class description.
-        /// </summary>
         public static GameProcess Process { get; } = new();
-
-        /// <summary>
-        ///     Gets the GameHelper settings.
-        /// </summary>
         public static State GHSettings { get; } = JsonHelper.CreateOrLoadJsonFile<State>(State.CoreSettingFile);
-
-        /// <summary>
-        ///     Gets the cache for all the GGPK data with value type string.
-        /// </summary>
         internal static GgpkAddresses<string> GgpkStringCache {get;} = new();
-
-        /// <summary>
-        ///     Gets the cache for all the GGPK data with value type object.
-        ///     Please use <seealso cref="GgpkStringCache"/> if possible as it's
-        ///     little bit faster than this one.
-        /// </summary>
         internal static GgpkAddresses<object> GgpkObjectCache { get;} = new();
-
-        /// <summary>
-        ///     Gets the AreaChangeCounter instance. For details read class description.
-        /// </summary>
         internal static AreaChangeCounter AreaChangeCounter { get; } = new(IntPtr.Zero);
-
-        /// <summary>
-        ///     Gets the values associated with the Game Window Scale.
-        /// </summary>
         internal static GameWindowScale GameScale { get; } = new();
-
-        /// <summary>
-        ///     Gets the size of the cull (black bar) area in the game window.
-        /// </summary>
         internal static GameWindowCull GameCull { get; } = new(IntPtr.Zero);
-
-        /// <summary>
-        ///     Gets the values associated with the terrain rotation selector.
-        /// </summary>
         internal static TerrainHeightHelper RotationSelector { get; } = new(IntPtr.Zero, 9);
+        internal static TerrainHeightHelper RotatorHelper { get; } = new(IntPtr.Zero, 25);
 
-        /// <summary>
-        ///     Gets the values associated with the terrain rotator helper.
-        /// </summary>
-        internal static TerrainHeightHelper RotatorHelper { get; } = new(IntPtr.Zero, 25); // if length ever changes, update terrain  height algo.
-
-        /// <summary>
-        ///     Initializes the <see cref="Core" /> class.
-        /// </summary>
         public static void Initialize()
         {
             try
@@ -134,36 +80,28 @@ namespace GameHelper
                 Console.WriteLine($"Failed to read GameHelper version: {ex.Message}.");
                 version = "Dev";
             }
-
-            // Initialize the controller service if it's enabled in the global settings.
-            // Assumes a setting like 'EnableControllerMode' exists in the 'State' (GHSettings) class.
+            
             if (GHSettings.EnableControllerMode)
             {
                 try
                 {
+                    ControllerStatus = "Initializing...";
                     VController = new VirtualControllerManager();
                     StartControllerMirroring();
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to initialize Virtual Controller: {ex.Message}");
+                    ControllerStatus = $"ERROR: Failed to initialize VCM: {ex.Message}";
                     VController = null;
                 }
             }
         }
-
-        /// <summary>
-        ///     Get GameHelper version.
-        /// </summary>
-        /// <returns>GameHelper version.</returns>
+        
         public static string GetVersion()
         {
             return version.Trim();
         }
 
-        /// <summary>
-        ///     Initializes the <see cref="Core" /> class coroutines.
-        /// </summary>
         internal static void InitializeCororutines()
         {
             CoroutineHandler.Start(GameClosedActions());
@@ -175,21 +113,13 @@ namespace GameHelper
             CoroutineHandler.Start(UpdateRotatorHelperData(), priority: int.MaxValue);
         }
 
-        /// <summary>
-        ///     Cleans up all the resources taken by the application core.
-        /// </summary>
         internal static void Dispose()
         {
-            // Stop the controller mirroring task and dispose of the controller manager.
             controllerMirrorToken?.Cancel();
             VController?.Dispose();
-
             Process.Close(false);
         }
 
-        /// <summary>
-        ///     Converts the RemoteObjects to ImGui Widgets.
-        /// </summary>
         internal static void RemoteObjectsToImGuiCollapsingHeader()
         {
             const BindingFlags propertyFlags = BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static;
@@ -201,10 +131,7 @@ namespace GameHelper
                 }
             }
         }
-
-        /// <summary>
-        ///     Show the cache details on ImGui.
-        /// </summary>
+        
         internal static void CacheImGui()
         {
             if (ImGui.CollapsingHeader("GGPK String Data Cache"))
@@ -217,10 +144,7 @@ namespace GameHelper
                 GgpkObjectCache.ToImGui();
             }
         }
-
-        /// <summary>
-        ///     Starts the background task for mirroring the physical controller to the virtual one.
-        /// </summary>
+        
         private static void StartControllerMirroring()
         {
             controllerMirrorToken = new CancellationTokenSource();
@@ -228,28 +152,15 @@ namespace GameHelper
             {
                 var directInput = new DirectInput();
                 var joystickGuid = Guid.Empty;
-                foreach (var deviceInstance in directInput.GetDevices(DeviceType.Gamepad, DeviceEnumerationFlags.AllDevices))
-                {
-                    joystickGuid = deviceInstance.InstanceGuid;
-                    break;
-                }
-
+                foreach (var deviceInstance in directInput.GetDevices(DeviceType.Gamepad, DeviceEnumerationFlags.AllDevices)) { joystickGuid = deviceInstance.InstanceGuid; break; }
                 if (joystickGuid == Guid.Empty)
                 {
-                    foreach (var deviceInstance in directInput.GetDevices(DeviceType.Joystick, DeviceEnumerationFlags.AllDevices))
-                    {
-                        joystickGuid = deviceInstance.InstanceGuid;
-                        break;
-                    }
+                    foreach (var deviceInstance in directInput.GetDevices(DeviceType.Joystick, DeviceEnumerationFlags.AllDevices)) { joystickGuid = deviceInstance.InstanceGuid; break; }
                 }
-                if (joystickGuid == Guid.Empty)
-                {
-                    Console.WriteLine("VCM WARNING: No physical (DirectInput) controller was found.");
-                    return;
-                }
+                if (joystickGuid == Guid.Empty) { ControllerStatus = "ERROR: No physical controller found."; return; }
 
                 using var joystick = new Joystick(directInput, joystickGuid);
-                Console.WriteLine($"VCM INFO: Physical controller found: {joystick.Information.InstanceName}. Mirroring...");
+                ControllerStatus = $"OK: Mirroring '{joystick.Information.InstanceName}'";
                 joystick.Properties.BufferSize = 128;
                 joystick.Acquire();
                 while (!controllerMirrorToken.IsCancellationRequested)
@@ -268,13 +179,13 @@ namespace GameHelper
                         }
                         else
                         {
-                            Console.WriteLine($"VCM ERROR: Unrecoverable mirroring error: {ex.Message}.");
+                            ControllerStatus = $"ERROR: Unrecoverable mirroring error: {ex.Message}";
                             break;
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"VCM ERROR: General mirroring error: {ex.Message}.");
+                        ControllerStatus = $"ERROR: General mirroring error: {ex.Message}";
                         break;
                     }
 
@@ -283,12 +194,7 @@ namespace GameHelper
                 joystick.Unacquire();
             }, controllerMirrorToken.Token);
         }
-
-        /// <summary>
-        ///     Co-routine to update the address where the
-        ///     Game Cull Value is loaded in the game memory.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
+        
         private static IEnumerator<Wait> UpdateCullData()
         {
             while (true)
@@ -298,10 +204,6 @@ namespace GameHelper
             }
         }
 
-        /// <summary>
-        ///     Co-routine to update the address where AreaChange object is loaded in the game memory.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
         private static IEnumerator<Wait> UpdateAreaChangeData()
         {
             while (true)
@@ -311,10 +213,6 @@ namespace GameHelper
             }
         }
 
-        /// <summary>
-        ///     Co-routine to update the address where the Files are loaded in the game memory.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
         private static IEnumerator<Wait> UpdateFilesData()
         {
             while (true)
@@ -324,10 +222,6 @@ namespace GameHelper
             }
         }
 
-        /// <summary>
-        ///     Co-routine to update the address where the Game States are loaded in the game memory.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
         private static IEnumerator<Wait> UpdateStatesData()
         {
             while (true)
@@ -337,10 +231,6 @@ namespace GameHelper
             }
         }
 
-        /// <summary>
-        ///     Co-routine to update the address where the Rotation Selector values are loaded in the game memory.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
         private static IEnumerator<Wait> UpdateRotationSelectorData()
         {
             while (true)
@@ -350,10 +240,6 @@ namespace GameHelper
             }
         }
 
-        /// <summary>
-        ///     Co-routine to update the address where the rotator helper values are loaded in the game memory.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
         private static IEnumerator<Wait> UpdateRotatorHelperData()
         {
             while (true)
@@ -363,11 +249,6 @@ namespace GameHelper
             }
         }
 
-        /// <summary>
-        ///     Co-routine to set All controllers addresses to Zero,
-        ///     once the game closes.
-        /// </summary>
-        /// <returns>co-routine IWait.</returns>
         private static IEnumerator<Wait> GameClosedActions()
         {
             while (true)
